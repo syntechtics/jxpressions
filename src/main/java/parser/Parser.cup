@@ -1,0 +1,295 @@
+package parser;
+
+// CUP specification for a simple expression evaluator (w/ actions)
+
+import java.lang.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.lang.reflect.*;
+import java_cup.runtime.*;
+import syntechtics.jxpression.functions.*;
+
+/* Preliminaries to set up and use the scanner.  */
+parser code {: 
+
+	/** this object is the input user object **/	
+	Object object = null;
+	public void setObject(Object object) {
+		this.object = object;
+	}
+
+	Function result = null;
+
+	private static Class<?> loadFunction(String functionName) {
+		try {
+			return Class.forName("syntechtics.jxpression.functions." + functionName);
+		} catch (ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
+	private static Function<?> newInstance(String functionName) {
+		try {
+			return ((Function)loadFunction(functionName).newInstance());
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
+	private static Constant loadConstant(Object object) {
+		Class<?> clazz = loadFunction("Constant");
+		Constructor<Constant> function = (Constructor<Constant>) clazz.getConstructors()[0];
+		Constant constant;
+		try {
+			constant = function.newInstance(object);
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+		return constant;
+	} 
+:}
+
+scan with {: return getScanner().next_token(); :};
+
+/* Terminals (tokens returned by the scanner). */
+terminal           COMMA, SEMI, PLUS, MINUS, UMINUS, TIMES, DIVIDE, MOD, LPAREN, RPAREN, EQEQ,  GTEQ, LTEQ, GT, LT, NOTEQ, NOT, AND, OR;
+terminal Double    NUMBER;
+terminal String    STRING, IDENTIFIER;
+
+/* Non-terminals */
+non terminal Function	    constant;
+non terminal Function	   	arithmatic_expr; 
+non terminal Function    	boolean_expr;
+non terminal Function    	relational_expr; 
+non terminal Function	    arguments; 
+non terminal Function  		function;
+non terminal Function  		expr;
+non terminal Function  		input;
+
+/* Precedences */
+precedence left OR;
+precedence left AND;
+precedence left NOT;
+precedence left EQEQ, GTEQ, LTEQ, GT, LT, NOTEQ;
+precedence left PLUS, MINUS;
+precedence left TIMES, DIVIDE, MOD;
+precedence left UMINUS;
+precedence left IDENTIFIER, LPAREN, RPAREN;
+
+/* The grammar */
+
+input     ::= expr:e SEMI;
+expr      ::= 
+		  LPAREN expr:e RPAREN
+	      {: 
+	        RESULT = e; 
+	        result = RESULT;
+	      :}
+		  |
+		  constant:c
+		  {:
+		  	RESULT = c;
+		  	result = RESULT; 
+		  :}
+		  |
+		  arithmatic_expr:c
+          {:
+		  	RESULT = c;
+		  	result = RESULT; 
+		  :}
+		  |
+		  boolean_expr:c
+		  {:
+		  	RESULT = c;
+		  	result = RESULT; 
+		  :}
+		  | 
+		  relational_expr:c
+		  {:
+		  	RESULT = c;
+		  	result = RESULT; 
+		  :}
+		  |
+		  function:c
+		  {:
+		  	RESULT = c;
+		  	result = RESULT; 
+		  :} 
+	      ;
+
+arguments ::= 
+          arguments:args COMMA expr:e
+          {:
+          	((Arguments)args).addArgument(e);
+          	RESULT=args;
+          :}    
+          | expr:e
+          {:
+          	Arguments arguments = (Arguments)newInstance("Arguments");
+          	arguments.addArgument(e);
+          	RESULT = arguments;
+          :}
+          ;
+
+function ::= 
+          IDENTIFIER:i LPAREN RPAREN 
+		  {:
+			  Class<?> clazz = loadFunction(i);
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  RESULT = function;
+		  :}
+		  |
+		  IDENTIFIER:i LPAREN arguments:args RPAREN
+		  {:
+		  	  Class<?> clazz = loadFunction(i);
+			  Function function = (Function)clazz.newInstance();
+			  Arguments arguments = (Arguments)args;
+			  Function[] functions = arguments.evaluate();
+			  function.setArgs(functions);
+			  RESULT = function;
+		  :}
+		  ;
+
+boolean_expr ::= 
+	      NOT expr:e    
+          {: 
+	      	Function function = (Function)newInstance("Not");
+	      	function.setArgs(e);
+	        RESULT = function;
+	      :}
+	      | 
+	      expr:e1 AND expr:e2    
+          {: 
+	      	Function function = (Function)newInstance("And");
+	      	function.setArgs(e1, e2);
+	        RESULT = function;
+	      :}
+	      | 
+	      expr:e1 OR expr:e2    
+          {: 
+	      	Function function = (Function)newInstance("Or");
+	      	function.setArgs(e1, e2);
+	        RESULT = function;
+	      :}
+	      ;
+
+arithmatic_expr ::=
+          expr:e1 PLUS expr:e2    
+	      {: 
+	      	Function function = (Function)newInstance("Add");
+	      	function.setArgs(e1, e2);
+	        RESULT = function; 
+	      :} 
+	      | 
+          expr:e1 MINUS expr:e2    
+          {: 
+	      	Function function = (Function)newInstance("Subtract");
+	      	function.setArgs(e1, e2);
+	        RESULT = function;
+	      :}
+	      |
+	      MINUS expr:e             
+	      {: 
+	        Function function = (Function)newInstance("Subtract");
+	      	function.setArgs(loadConstant(0.0), e);
+	        RESULT = function;
+	      :} 
+	      %prec UMINUS
+	      | 
+          expr:e1 TIMES expr:e2
+          {: 
+	      	Function function = (Function)newInstance("Multiply");
+	      	function.setArgs(e1, e2);
+	        RESULT = function; 
+	      :} 
+	      | 
+          expr:e1 DIVIDE expr:e2 
+          {: 
+	      	Function function = (Function)newInstance("Divide");
+	      	function.setArgs(e1, e2);
+	        RESULT = function;
+	      :}
+	      | 
+          expr:e1 MOD expr:e2 
+	      {: 
+	      	Function function = (Function)newInstance("Mod");
+	      	function.setArgs(e1, e2);
+	        RESULT = function; 
+	      :}
+	      ;
+
+relational_expr ::=
+          expr:e1 GTEQ expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("GTEquals");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      |
+          expr:e1 EQEQ expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("Equals");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      |
+          expr:e1 LTEQ expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("LTEquals");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      |
+          expr:e1 GT expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("GreaterThan");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      |
+          expr:e1 LT expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("LessThan");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      |
+          expr:e1 NOTEQ expr:e2
+	      {: 
+	      	  Class<?> clazz = loadFunction("NotEquals");
+			  Function<Double> function = (Function<Double>)clazz.newInstance();
+			  function.setArgs(e1, e2);
+			  RESULT = function;
+	      :}
+	      ;
+
+constant ::= 
+          IDENTIFIER:n                 
+	      {: 
+	      	Field field = object.getClass().getDeclaredField(n);
+		    boolean accessible = field.isAccessible();
+		    field.setAccessible(true);
+			Object o = field.get(object);
+			if(o instanceof Number) {
+				o = ((Number)o).doubleValue();
+			}
+	      	RESULT = loadConstant(o);
+		    field.setAccessible(accessible);
+	      :}
+	      |
+	      NUMBER:n                 
+	      {: 
+	      	Double d = Double.valueOf(n);
+	      	RESULT = loadConstant(d);
+	      :}
+	      |
+	      STRING:s
+	      {: 
+	        RESULT=loadConstant(s); 
+	      :}   
+		  ;
